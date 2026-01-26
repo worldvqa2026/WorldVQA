@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WorldVQA - Measuring Atomic World Knowledge in MLLMs</title>
+    <link rel="icon" href="logos/kimi_small.png" type="image/svg+xml">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'tech-white': '#ffffff',
+                        'tech-light': '#f8fafc',
+                        'tech-gray': '#f1f5f9',
+                        'accent-purple': '#7c3aed',
+                        'accent-cyan': '#0891b2',
+                        'accent-emerald': '#059669',
+                        'text-primary': '#0f172a',
+                        'text-secondary': '#475569',
+                        'text-muted': '#94a3b8',
+                    },
+                    fontFamily: {
+                        'serif': ['Crimson Pro', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif'],
+                        'mono': ['JetBrains Mono', 'Consolas', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        .chart-box {
+            background: white;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            padding: 32px; /* 增加一点内边距让内部不拥挤 */
+            /* max-width: 1200px; */
+            margin: 0 auto 48px auto; /* 重点：增加 48px 的底边距 (3rem) */
+        }
+        body { background-color: #ffffff; color: #0f172a; }
+        .gradient-text {
+            background: linear-gradient(135deg, #0891b2 0%, #7c3aed 50%, #db2777 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .glow-border { box-shadow: 0 0 30px rgba(124, 58, 237, 0.1), inset 0 0 30px rgba(124, 58, 237, 0.03); }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        }
+        .academic-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.25rem;
+            background: #ffffff;
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            border-radius: 9999px;
+            color: #0f172a;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+        .academic-btn:hover {
+            background: #f8fafc;
+            border-color: rgba(124, 58, 237, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.1);
+        }
+        
+        /* 3D Carousel Styles */
+        .carousel-container { perspective: 1200px; height: 600px; display: flex; align-items: center; justify-content: center; position: relative; }
+        .carousel { width: 300px; height: 500px; position: relative; transform-style: preserve-3d; transition: transform 0.5s ease; }
+        .carousel-item {
+            position: absolute; width: 280px; height: 480px; background: #ffffff; border-radius: 20px;
+            border: 1px solid rgba(0, 0, 0, 0.06); overflow: hidden; backface-visibility: hidden;
+            transition: all 0.5s ease; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08); display: flex; flex-direction: column;
+        }
+        .carousel-item-img-container {
+            width: 100%; height: 280px; background-color: #f8fafc; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgba(0, 0, 0, 0.03);
+        }
+        .carousel-item img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .carousel-item-content { padding: 1.5rem 1.25rem; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between; }
+        .carousel-item .category { font-size: 0.75rem; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem; font-weight: 700; }
+        .carousel-item .question { font-size: 0.95rem; color: #1e293b; line-height: 1.5; font-weight: 500; }
+        .carousel-item .answer { font-size: 0.9rem; color: #059669; font-weight: 600; font-family: 'Inter', sans-serif; border-top: 1px dashed #e2e8f0; margin-top: 1rem; padding-top: 0.75rem;}
+        
+        .carousel-btn {
+            position: absolute; top: 50%; transform: translateY(-50%); z-index: 30; width: 48px; height: 48px; border-radius: 50%;
+            background: white; border: 1px solid rgba(0,0,0,0.08); box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;
+        }
+        .carousel-btn:hover { color: #7c3aed; transform: translateY(-50%) scale(1.1); }
+        .carousel-btn-left { left: 60px; }
+        .carousel-btn-right { right: 60px; }
+        
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="antialiased">
+    <!-- Navigation -->
+    <nav class="fixed top-0 w-full z-50 glass-panel border-b border-black/5">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <img src="logos/kimi_small.png" alt="Kimi" class="w-8 h-8">
+                <span class="font-serif text-xl tracking-wide text-text-primary">WorldVQA</span>
+            </div>
+            <div class="hidden md:flex items-center gap-8">
+                <a href="#leaderboard" class="text-sm text-text-secondary hover:text-text-primary transition-colors">Leaderboard</a>
+                <a href="#abstract" class="text-sm text-text-secondary hover:text-text-primary transition-colors">Abstract</a>
+                <a href="#showcase" class="text-sm text-text-secondary hover:text-text-primary transition-colors">Showcase</a>
+            </div>
+        </div>
+    </nav>
+    <section id="hero" class="relative pt-32 pb-20 overflow-hidden bg-gradient-to-b from-slate-50 to-white">
+        <div class="absolute inset-0 overflow-hidden">
+            <div class="absolute top-1/4 -left-32 w-96 h-96 bg-accent-purple/10 rounded-full blur-[128px]"></div>
+            <div class="absolute bottom-1/4 -right-32 w-96 h-96 bg-accent-cyan/10 rounded-full blur-[128px]"></div>
+        </div>
+        
+        <div class="relative z-10 px-6">
+            <div class="max-w-5xl mx-auto text-center mb-16">
+                <h1 class="font-serif text-5xl md:text-7xl leading-[1.1] tracking-tight mb-6">
+                    <span class="gradient-text">WorldVQA</span>
+                </h1>
+                <p class="font-serif text-xl md:text-3xl text-text-secondary italic mb-4">
+                    Measuring Atomic World Knowledge in<br>Multimodal Large Language Models
+                </p>
+                <p class="font-sans text-text-muted text-sm tracking-widest uppercase mb-10">
+                    Kimi Team • Moonshot AI
+                </p>
+                
+                <div class="flex flex-wrap justify-center gap-3">
+                    <a href="https://github.com/MoonshotAI/WorldVQA/paper/worldvqa.pdf" class="academic-btn"><img src="logos/arxiv_small.svg" class="w-5 h-5"><span>arXiv</span></a>
+                    <a href="https://github.com/MoonshotAI/WorldVQA/" class="academic-btn"><i class="fab fa-github"></i><span>Code</span></a>
+                    <a href="https://huggingface.co/datasets/moonshotai/WorldVQA" class="academic-btn"><span>🤗</span><span>Dataset</span></a>
+                </div>
+            </div>
+    
+            <div id="leaderboard" class="max-w-7xl mx-auto">
+                <div class="chart-box">    
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-0">
+                        <div class="lg:col-span-6 flex flex-col items-center">
+                            <h3 class="font-serif text-lg mb-4 text-center text-text-primary">Overall Model Accuracy</h3>
+                            <div id="barChartContainer" class="w-full h-[400px]"></div>
+                        </div>
+            
+                        <div class="lg:col-span-6 flex flex-col items-center">
+                            <h3 class="font-serif text-lg mb-4 text-center text-text-primary">Category-wise Accuracy</h3>
+                            <div class="w-full h-[400px] flex items-center justify-center">
+                                <div id="categoryChart" style="width: 100%; height: 400px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+    
+                <div class="glass-panel rounded-2xl overflow-hidden bg-white shadow-xl">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-black/5">
+                                    <th rowspan="2" class="px-6 py-4 text-left font-mono uppercase text-text-muted border-r border-black/5">Rank</th>
+                                    <th rowspan="2" class="px-6 py-4 text-left font-mono uppercase text-text-muted border-r border-black/5">Model</th>
+                                    <th rowspan="2" class="px-6 py-4 text-center font-mono uppercase text-accent-purple border-r border-black/5">Accuracy</th>
+                                    <th rowspan="2" class="px-6 py-4 text-center font-mono uppercase text-accent-purple border-r border-black/5">Overall<br>F-Score</th>
+                                    <th colspan="8" class="px-6 py-2 text-center font-mono uppercase text-text-muted bg-slate-100/50">F-score on 8 categories</th>
+                                </tr>
+                                <tr class="bg-slate-50 border-b border-black/5">
+                                    <th class="px-4 py-3 text-center font-mono text-xs uppercase text-text-muted">Nature</th>
+                                    <th class="px-4 py-3 text-center font-mono text-xs uppercase text-text-muted">Geography</th>
+                                    <th class="px-4 py-3 text-center font-mono text-xs uppercase text-text-muted">Culture</th>
+                                    <th class="px-4 py-3 text-center font-mono text-xs uppercase text-text-muted">Objects</th>
+                                    <th class="px-4 py-3 text-center font-mono text-xs uppercase text-text-muted">Transportation</th>
+                                    <th class="px-4 py-3 text-center font-mono text-xs uppercase text-text-muted">Entertainment</th>
+                                    <th class="px-4 py-3 text-center font-mono text-xs uppercase text-text-muted">Brands</th>
+                                    <th class="px-4 py-3 text-center font-mono text-xs uppercase text-text-muted">Sports</th>
+                                </tr>
+                            </thead>
+                            <tbody id="leaderboardBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Abstract Section (Removed Radar Chart from here) -->
+    <section id="abstract" class="py-24 relative bg-slate-50">
+        <div class="max-w-6xl mx-auto px-6">
+            <div class="glass-panel p-8 md:p-12 rounded-2xl glow-border bg-white shadow-sm">
+                <div class="flex items-center gap-4 mb-12">
+                    <div class="h-px flex-1 bg-gradient-to-r from-transparent via-black/10 to-transparent"></div>
+                    <h2 class="font-serif text-3xl md:text-4xl text-center text-text-primary">Abstract</h2>
+                    <div class="h-px flex-1 bg-gradient-to-r from-transparent via-black/10 to-transparent"></div>
+                </div>
+                <p class="font-serif text-lg md:text-xl leading-relaxed text-text-secondary first-letter:text-5xl first-letter:font-serif first-letter:gradient-text first-letter:float-left first-letter:mr-3 first-letter:mt-2">
+                    We introduce WorldVQA, a benchmark designed to evaluate the factual correctness and atomic vision-centric world knowledge of Multimodal Large Language Models (MLLMs). Current evaluations often conflate visual knowledge retrieval with reasoning. In contrast, WorldVQA decouples these capabilities to strictly measure "what the model memorizes." The benchmark assesses the atomic capability of grounding and naming visual entities across a stratified taxonomy, spanning from common head-class objects to long-tail rarities. We hope WorldVQA serves as a rigorous test for visual factuality, thereby establishing a standard for assessing the encyclopedic breadth and hallucination rates of current and next-generation frontier models.
+                </p>
+                
+                <div class="flex items-center justify-center mt-12"> 
+                    <div class="relative w-full max-w-4xl aspect-[16/9] bg-gradient-to-br from-slate-100 to-white rounded-xl overflow-hidden border border-black/10 flex items-center justify-center">
+                        <img src="images/main_figure.jpg" alt="WorldVQA Dataset Overview" class="w-full h-full object-contain">
+                    </div>
+                </div>
+                <div class="max-w-4xl mx-auto mt-6 px-4 text-center">
+                    <p class="text-sm md:text-base leading-relaxed text-text-secondary">
+                        <span class="font-bold text-text-primary">WorldVQA Overview.</span> 
+                        <span class="text-text-muted">
+                            The benchmark is organized into nine categories: Nature & Environment (Nature); Locations & Architecture (Geography); Culture, Arts & Crafts (Culture); Objects & Products (Objects); Vehicles, Craft & Transportation (Transportation); Entertainment, Media & Gaming (Entertainment); Brands, Logos & Graphic Design (Brands); Sports, Gear & Venues (Sports); Notable People & Public Figures (People).
+                        </span>
+                    </p>
+                </div>
+                
+                <!--Statistics Table-->
+                <div class="mt-10 border-t border-black/10 pt-8">
+                    <!-- <h3 class="font-serif text-xl text-center text-text-primary mb-6">WorldVQA Statistics</h3> -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse text-sm">
+                            <thead>
+                                <tr class="border-b-2 border-black/80">
+                                    <th class="px-3 py-2 text-left font-bold text-text-primary">Statistics</th>
+                                    <th class="px-3 py-2 text-right font-bold text-text-primary">Number</th>
+                                    <th class="px-3 py-2 text-left font-bold text-text-primary pl-6">Statistics</th>
+                                    <th class="px-3 py-2 text-right font-bold text-text-primary">Percentage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="border-b border-black/10">
+                                    <td class="px-3 py-2 text-left">
+                                        <div class="font-bold text-text-primary">Data</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">3500</td>
+                                    <td class="px-3 py-2 pl-6">
+                                        <div class="text-text-secondary">- Entertainment, Media & Gaming (Entertainment)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">14.60%</td>
+                                </tr>
+                                <tr class="border-b border-black/10">
+                                    <td class="px-3 py-2 text-left pl-6">
+                                        <div class="text-text-secondary">- Chinese (CN)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono text-text-secondary">1260 (36%)</td>
+                                    <td class="px-3 py-2 pl-6">
+                                        <div class="text-text-secondary">- Brands, Logos & Graphic Design (Brands)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">7.43%</td>
+                                </tr>
+                                <tr class="border-b border-black/10">
+                                    <td class="px-3 py-2 text-left pl-6">
+                                        <div class="text-text-secondary">- English (EN)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono text-text-secondary">2240 (64%)</td>
+                                    <td class="px-3 py-2 pl-6">
+                                        <div class="text-text-secondary">- Sports, Gear & Venues (Sports)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">4.06%</td>
+                                </tr>
+                                <tr class="border-b border-black/10">
+                                    <td class="px-3 py-2 text-left">
+                                        <div class="font-bold text-text-primary">Category Categories</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right"></td>
+                                    <td class="px-3 py-2 pl-6">
+                                        <div class="font-bold text-text-primary">Notable People & Public Figures (People)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">14.29%</td>
+                                </tr>
+                                <tr class="border-b border-black/10">
+                                    <td class="px-3 py-2 text-left pl-6">
+                                        <div class="text-text-secondary">- Nature & Environment (Nature)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">9.31%</td>
+                                    <td class="px-3 py-2 pl-6">
+                                        <div class="font-bold text-text-primary">Difficulty</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right"></td>
+                                </tr>
+                                <tr class="border-b border-black/10">
+                                    <td class="px-3 py-2 text-left pl-6">
+                                        <div class="text-text-secondary">- Locations & Architecture (Geography)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">14.63%</td>
+                                    <td class="px-3 py-2 pl-6">
+                                        <div class="text-text-secondary">- Easy</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">31.17%</td>
+                                </tr>
+                                <tr class="border-b border-black/10">
+                                    <td class="px-3 py-2 text-left pl-6">
+                                        <div class="text-text-secondary">- Culture, Arts & Crafts (Culture)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">14.46%</td>
+                                    <td class="px-3 py-2 pl-6">
+                                        <div class="text-text-secondary">- Medium</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">40.77%</td>
+                                </tr>
+                                <tr class="border-b border-black/10">
+                                    <td class="px-3 py-2 text-left pl-6">
+                                        <div class="text-text-secondary">- Objects & Products (Objects)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">12.49%</td>
+                                    <td class="px-3 py-2 pl-6">
+                                        <div class="text-text-secondary">- Hard</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">28.07%</td>
+                                </tr>
+                                <tr class="border-b-2 border-black/80">
+                                    <td class="px-3 py-2 text-left pl-6">
+                                        <div class="text-text-secondary">- Vehicles, Craft & Transportation (Transportation)</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono">8.74%</td>
+                                    <td class="px-3 py-2 text-right"></td>
+                                    <td class="px-3 py-2 text-right"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="max-w-4xl mx-auto mt-6 px-4 text-center">
+                        <p class="text-sm md:text-base leading-relaxed text-text-secondary">
+                            <span class="font-bold text-text-primary">WorldVQA Statistics.</span> 
+                            <span class="text-text-muted">
+                                WorldVQA statistics across nine semantic categories and three difficulty tiers
+                            </span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- VQA Showcase Section - 3D Carousel with Wider Spacing & Controls -->
+    <section id="showcase" class="py-24 relative overflow-hidden bg-white">
+        <div class="max-w-7xl mx-auto px-6 relative z-10">
+            <div class="flex items-center gap-4 mb-12">
+                <div class="h-px flex-1 bg-gradient-to-r from-transparent via-black/10 to-transparent"></div>
+                <h2 class="font-serif text-3xl md:text-4xl text-center text-text-primary">WorldVQA Showcase</h2>
+                <div class="h-px flex-1 bg-gradient-to-r from-transparent via-black/10 to-transparent"></div>
+            </div>
+            
+            <!-- 3D Carousel Container with Buttons -->
+            <div class="carousel-container">
+                <!-- Left Button -->
+                <button class="carousel-btn carousel-btn-left" onclick="prevSlide()" aria-label="Previous Slide">
+                    <i data-lucide="chevron-left" class="w-6 h-6"></i>
+                </button>
+                
+                <div class="carousel" id="carousel">
+                    <!-- Carousel items will be injected by JS -->
+                </div>
+                
+                <!-- Right Button -->
+                <button class="carousel-btn carousel-btn-right" onclick="nextSlide()" aria-label="Next Slide">
+                    <i data-lucide="chevron-right" class="w-6 h-6"></i>
+                </button>
+            </div>
+            
+            <!-- Carousel Indicators -->
+            <div class="flex justify-center gap-2 mt-6">
+                <button onclick="setCarousel(0)" class="carousel-dot w-2 h-2 rounded-full bg-black/20 hover:bg-text-primary transition-colors" data-index="0"></button>
+                <button onclick="setCarousel(1)" class="carousel-dot w-2 h-2 rounded-full bg-black/20 hover:bg-text-primary transition-colors" data-index="1"></button>
+                <button onclick="setCarousel(2)" class="carousel-dot w-2 h-2 rounded-full bg-black/20 hover:bg-text-primary transition-colors" data-index="2"></button>
+                <button onclick="setCarousel(3)" class="carousel-dot w-2 h-2 rounded-full bg-black/20 hover:bg-text-primary transition-colors" data-index="3"></button>
+                <button onclick="setCarousel(4)" class="carousel-dot w-2 h-2 rounded-full bg-black/20 hover:bg-text-primary transition-colors" data-index="4"></button>
+                <button onclick="setCarousel(5)" class="carousel-dot w-2 h-2 rounded-full bg-black/20 hover:bg-text-primary transition-colors" data-index="5"></button>
+            </div>
+        </div>
+    </section>
+
+    <footer class="py-16 border-t border-black/5 bg-slate-50">
+        <div class="max-w-4xl mx-auto px-6 text-center">
+            <h3 class="font-serif text-xl mb-6 text-text-primary">Citation</h3>
+            <div class="glass-panel p-6 rounded-xl text-left font-mono text-xs md:text-sm text-text-secondary overflow-x-auto bg-white">
+                <pre>@misc{worldvqa2025,
+    title={WorldVQA: Measuring Atomic World Knowledge in Multimodal Large Language Models},
+    author={MoonshotAI},
+    year={2025},
+    howpublished={\url{https://github.com/MoonshotAI/WorldVQA}},
+}</pre>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // ==========================================
+        // 1. 统一数据来源 (Unified Master Data)
+        // ==========================================
+        const WORLD_VQA_MASTER_DATA = [
+            {"id": "gemini-3-pro", "name": "Gemini-3-pro", "brand": "gemini", "type": "closed", "scores": {"overall": 47.4, "accuracy": 47.4, "fscore": 47.5, "nature": {"correct": 45.1, "incorrect": 54.9, "unattempted": 0.0, "cga": 45.1, "fscore": 45.1}, "geo": {"correct": 44.7, "incorrect": 55.3, "unattempted": 0.0, "cga": 44.7, "fscore": 44.7}, "culture": {"correct": 47.2, "incorrect": 52.8, "unattempted": 0.0, "cga": 47.2, "fscore": 47.2}, "objects": {"correct": 48.1, "incorrect": 51.9, "unattempted": 0.0, "cga": 48.1, "fscore": 48.1}, "transport": {"correct": 45.1, "incorrect": 54.9, "unattempted": 0.0, "cga": 45.1, "fscore": 45.1}, "entertainment": {"correct": 47.6, "incorrect": 52.3, "unattempted": 0.2, "cga": 47.6, "fscore": 47.6}, "brands": {"correct": 50.8, "incorrect": 43.1, "unattempted": 6.2, "cga": 54.1, "fscore": 52.4}, "sports": {"correct": 59.2, "incorrect": 40.1, "unattempted": 0.7, "cga": 59.6, "fscore": 59.4}}},
+            {"id": "Kimi-K2.5", "name": "Kimi-K2.5", "brand": "kimi", "type": "open", "scores": {"overall": 46.3, "accuracy": 46.3, "fscore": 46.8, "nature": {"correct": 39.6, "incorrect": 55.2, "unattempted": 5.2, "cga": 41.7, "fscore": 40.6}, "geo": {"correct": 45.9, "incorrect": 50.2, "unattempted": 3.9, "cga": 47.8, "fscore": 46.8}, "culture": {"correct": 42.5, "incorrect": 55.1, "unattempted": 2.4, "cga": 43.5, "fscore": 43.0}, "objects": {"correct": 44.6, "incorrect": 55.1, "unattempted": 0.2, "cga": 44.7, "fscore": 44.7}, "transport": {"correct": 47.4, "incorrect": 52.6, "unattempted": 0.0, "cga": 47.4, "fscore": 47.4}, "entertainment": {"correct": 47.7, "incorrect": 50.9, "unattempted": 1.4, "cga": 48.4, "fscore": 48.1}, "brands": {"correct": 51.9, "incorrect": 45.4, "unattempted": 2.7, "cga": 53.4, "fscore": 52.6}, "sports": {"correct": 64.8, "incorrect": 35.2, "unattempted": 0.0, "cga": 64.8, "fscore": 64.8}}},
+            {"id": "claude-opus-4.5", "name": "Claude-opus-4.5", "brand": "claude", "type": "closed", "scores": {"overall": 36.8, "accuracy": 36.8, "fscore": 37.5, "nature": {"correct": 32.2, "incorrect": 66.3, "unattempted": 1.5, "cga": 32.7, "fscore": 32.5}, "geo": {"correct": 35.9, "incorrect": 61.1, "unattempted": 2.9, "cga": 37.0, "fscore": 36.5}, "culture": {"correct": 33.6, "incorrect": 63.4, "unattempted": 3.0, "cga": 34.6, "fscore": 34.1}, "objects": {"correct": 39.6, "incorrect": 60.4, "unattempted": 0.0, "cga": 39.6, "fscore": 39.6}, "transport": {"correct": 43.5, "incorrect": 56.5, "unattempted": 0.0, "cga": 43.5, "fscore": 43.5}, "entertainment": {"correct": 27.2, "incorrect": 60.3, "unattempted": 12.5, "cga": 31.1, "fscore": 29.0}, "brands": {"correct": 47.3, "incorrect": 51.5, "unattempted": 1.2, "cga": 47.9, "fscore": 47.6}, "sports": {"correct": 54.9, "incorrect": 45.1, "unattempted": 0.0, "cga": 54.9, "fscore": 54.9}}},
+            {"id": "gemini-2.5-pro", "name": "Gemini-2.5-pro", "brand": "gemini", "type": "closed", "scores": {"overall": 36.9, "accuracy": 36.9, "fscore": 36.9, "nature": {"correct": 37.1, "incorrect": 62.9, "unattempted": 0.0, "cga": 37.1, "fscore": 37.1}, "geo": {"correct": 33.8, "incorrect": 66.2, "unattempted": 0.0, "cga": 33.8, "fscore": 33.8}, "culture": {"correct": 32.6, "incorrect": 67.2, "unattempted": 0.2, "cga": 32.7, "fscore": 32.6}, "objects": {"correct": 39.6, "incorrect": 60.2, "unattempted": 0.2, "cga": 39.7, "fscore": 39.6}, "transport": {"correct": 39.9, "incorrect": 60.1, "unattempted": 0.0, "cga": 39.9, "fscore": 39.9}, "entertainment": {"correct": 34.2, "incorrect": 65.8, "unattempted": 0.0, "cga": 34.2, "fscore": 34.2}, "brands": {"correct": 38.8, "incorrect": 61.2, "unattempted": 0.0, "cga": 38.8, "fscore": 38.8}, "sports": {"correct": 54.2, "incorrect": 45.8, "unattempted": 0.0, "cga": 54.2, "fscore": 54.2}}},
+            {"id": "seed-1.5-thinking-vision-pro", "name": "seed-1.5-vison-pro", "brand": "seed", "type": "closed", "scores": {"overall": 34.9, "accuracy": 34.9, "fscore": 35.2, "nature": {"correct": 40.5, "incorrect": 54.9, "unattempted": 4.6, "cga": 42.4, "fscore": 41.4}, "geo": {"correct": 35.4, "incorrect": 60.5, "unattempted": 4.1, "cga": 36.9, "fscore": 36.1}, "culture": {"correct": 33.2, "incorrect": 65.6, "unattempted": 1.2, "cga": 33.6, "fscore": 33.4}, "objects": {"correct": 32.7, "incorrect": 67.0, "unattempted": 0.2, "cga": 32.8, "fscore": 32.8}, "transport": {"correct": 35.0, "incorrect": 65.0, "unattempted": 0.0, "cga": 35.0, "fscore": 35.0}, "entertainment": {"correct": 33.5, "incorrect": 65.6, "unattempted": 1.0, "cga": 33.8, "fscore": 33.6}, "brands": {"correct": 32.3, "incorrect": 67.7, "unattempted": 0.0, "cga": 32.3, "fscore": 32.3}, "sports": {"correct": 43.7, "incorrect": 56.3, "unattempted": 0.0, "cga": 43.7, "fscore": 43.7}}},
+            {"id": "gpt-5.1", "name": "GPT-5.1", "brand": "gpt", "type": "closed", "scores": {"overall": 24.5, "accuracy": 24.5, "fscore": 26.7, "nature": {"correct": 24.2, "incorrect": 53.1, "unattempted": 22.7, "cga": 31.3, "fscore": 27.3}, "geo": {"correct": 21.7, "incorrect": 51.2, "unattempted": 27.1, "cga": 29.8, "fscore": 25.1}, "culture": {"correct": 21.1, "incorrect": 67.0, "unattempted": 11.9, "cga": 24.0, "fscore": 22.5}, "objects": {"correct": 25.6, "incorrect": 66.8, "unattempted": 7.6, "cga": 27.7, "fscore": 26.6}, "transport": {"correct": 31.4, "incorrect": 67.0, "unattempted": 1.6, "cga": 31.9, "fscore": 31.6}, "entertainment": {"correct": 16.2, "incorrect": 59.7, "unattempted": 24.1, "cga": 21.4, "fscore": 18.5}, "brands": {"correct": 32.3, "incorrect": 47.3, "unattempted": 20.4, "cga": 40.6, "fscore": 36.0}, "sports": {"correct": 45.1, "incorrect": 53.5, "unattempted": 1.4, "cga": 45.7, "fscore": 45.4}}},
+            {"id": "qwen3-vl-235b-a22b-instruct", "name": "Qwen3-VL-235B-A22B", "brand": "qwen", "type": "open", "scores": {"overall": 23.5, "accuracy": 23.5, "fscore": 23.5, "nature": {"correct": 26.1, "incorrect": 73.6, "unattempted": 0.3, "cga": 26.2, "fscore": 26.1}, "geo": {"correct": 24.8, "incorrect": 75.2, "unattempted": 0.0, "cga": 24.8, "fscore": 24.8}, "culture": {"correct": 22.9, "incorrect": 77.1, "unattempted": 0.0, "cga": 22.9, "fscore": 22.9}, "objects": {"correct": 26.1, "incorrect": 73.9, "unattempted": 0.0, "cga": 26.1, "fscore": 26.1}, "transport": {"correct": 28.8, "incorrect": 71.2, "unattempted": 0.0, "cga": 28.8, "fscore": 28.8}, "entertainment": {"correct": 15.5, "incorrect": 84.5, "unattempted": 0.0, "cga": 15.5, "fscore": 15.5}, "brands": {"correct": 22.3, "incorrect": 77.7, "unattempted": 0.0, "cga": 22.3, "fscore": 22.3}, "sports": {"correct": 26.1, "incorrect": 73.9, "unattempted": 0.0, "cga": 26.1, "fscore": 26.1}}},
+            {"id": "gpt-4o", "name": "gpt-4o", "brand": "gpt", "type": "closed", "scores": {"overall": 22.2, "accuracy": 22.2, "fscore": 23.3, "nature": {"correct": 24.2, "incorrect": 65.3, "unattempted": 10.4, "cga": 27.1, "fscore": 25.6}, "geo": {"correct": 18.4, "incorrect": 60.0, "unattempted": 21.7, "cga": 23.4, "fscore": 20.6}, "culture": {"correct": 17.2, "incorrect": 75.9, "unattempted": 6.9, "cga": 18.5, "fscore": 17.8}, "objects": {"correct": 18.8, "incorrect": 77.8, "unattempted": 3.4, "cga": 19.4, "fscore": 19.1}, "transport": {"correct": 26.1, "incorrect": 73.2, "unattempted": 0.7, "cga": 26.3, "fscore": 26.2}, "entertainment": {"correct": 17.8, "incorrect": 69.1, "unattempted": 13.1, "cga": 20.5, "fscore": 19.1}, "brands": {"correct": 34.6, "incorrect": 61.9, "unattempted": 3.5, "cga": 35.9, "fscore": 35.2}, "sports": {"correct": 44.4, "incorrect": 54.9, "unattempted": 0.7, "cga": 44.7, "fscore": 44.5}}},
+            {"id": "qwen3-vl-235b-a22b-thinking", "name": "Qwen3-VL-235B-A22B-Thinking", "brand": "qwen", "type": "open", "scores": {"overall": 22.3, "accuracy": 22.3, "fscore": 22.3, "nature": {"correct": 23.0, "incorrect": 76.1, "unattempted": 0.9, "cga": 23.2, "fscore": 23.1}, "geo": {"correct": 21.7, "incorrect": 77.5, "unattempted": 0.8, "cga": 21.9, "fscore": 21.8}, "culture": {"correct": 23.1, "incorrect": 76.7, "unattempted": 0.2, "cga": 23.2, "fscore": 23.1}, "objects": {"correct": 19.5, "incorrect": 80.3, "unattempted": 0.2, "cga": 19.5, "fscore": 19.5}, "transport": {"correct": 26.1, "incorrect": 73.9, "unattempted": 0.0, "cga": 26.1, "fscore": 26.1}, "entertainment": {"correct": 20.0, "incorrect": 78.9, "unattempted": 1.2, "cga": 20.2, "fscore": 20.1}, "brands": {"correct": 23.8, "incorrect": 75.8, "unattempted": 0.4, "cga": 23.9, "fscore": 23.9}, "sports": {"correct": 25.4, "incorrect": 74.6, "unattempted": 0.0, "cga": 25.4, "fscore": 25.4}}},
+            {"id": "grok-4-1-fast-reasoning", "name": "Grok-4-1-fast", "brand": "grok", "type": "closed", "scores": {"overall": 21.1, "accuracy": 21.1, "fscore": 21.1, "nature": {"correct": 18.4, "incorrect": 81.6, "unattempted": 0.0, "cga": 18.4, "fscore": 18.4}, "geo": {"correct": 23.6, "incorrect": 76.4, "unattempted": 0.0, "cga": 23.6, "fscore": 23.6}, "culture": {"correct": 20.2, "incorrect": 79.6, "unattempted": 0.2, "cga": 20.2, "fscore": 20.2}, "objects": {"correct": 25.2, "incorrect": 74.8, "unattempted": 0.0, "cga": 25.2, "fscore": 25.2}, "transport": {"correct": 23.5, "incorrect": 76.5, "unattempted": 0.0, "cga": 23.5, "fscore": 23.5}, "entertainment": {"correct": 11.4, "incorrect": 88.3, "unattempted": 0.2, "cga": 11.4, "fscore": 11.4}, "brands": {"correct": 25.8, "incorrect": 73.8, "unattempted": 0.4, "cga": 25.9, "fscore": 25.8}, "sports": {"correct": 30.3, "incorrect": 69.7, "unattempted": 0.0, "cga": 30.3, "fscore": 30.3}}},
+            {"id": "claude-sonnet-4.5", "name": "Claude-sonnet-4.5", "brand": "claude", "type": "closed", "scores": {"overall": 20.0, "accuracy": 20.0, "fscore": 20.9, "nature": {"correct": 18.7, "incorrect": 73.9, "unattempted": 7.4, "cga": 20.2, "fscore": 19.4}, "geo": {"correct": 19.5, "incorrect": 66.2, "unattempted": 14.3, "cga": 22.8, "fscore": 21.0}, "culture": {"correct": 16.4, "incorrect": 72.5, "unattempted": 11.1, "cga": 18.4, "fscore": 17.4}, "objects": {"correct": 22.7, "incorrect": 75.3, "unattempted": 2.1, "cga": 23.1, "fscore": 22.9}, "transport": {"correct": 24.8, "incorrect": 75.2, "unattempted": 0.0, "cga": 24.8, "fscore": 24.8}, "entertainment": {"correct": 10.8, "incorrect": 75.1, "unattempted": 14.1, "cga": 12.5, "fscore": 11.6}, "brands": {"correct": 31.9, "incorrect": 66.2, "unattempted": 1.9, "cga": 32.5, "fscore": 32.2}, "sports": {"correct": 31.0, "incorrect": 69.0, "unattempted": 0.0, "cga": 31.0, "fscore": 31.0}}},
+            {"id": "gpt-5.2", "name": "GPT-5.2", "brand": "gpt", "type": "closed", "scores": {"overall": 28.0, "accuracy": 28.0, "fscore": 28.7, "nature": {"correct": 23.3, "incorrect": 68.7, "unattempted": 8.0, "cga": 25.3, "fscore": 24.3}, "geo": {"correct": 27.7, "incorrect": 62.5, "unattempted": 9.8, "cga": 30.7, "fscore": 29.1}, "culture": {"correct": 26.3, "incorrect": 70.4, "unattempted": 3.4, "cga": 27.2, "fscore": 26.7}, "objects": {"correct": 26.5, "incorrect": 72.8, "unattempted": 0.7, "cga": 26.7, "fscore": 26.6}, "transport": {"correct": 30.7, "incorrect": 69.3, "unattempted": 0.0, "cga": 30.7, "fscore": 30.7}, "entertainment": {"correct": 23.3, "incorrect": 64.8, "unattempted": 11.9, "cga": 26.4, "fscore": 24.8}, "brands": {"correct": 38.8, "incorrect": 59.6, "unattempted": 1.5, "cga": 39.5, "fscore": 39.1}, "sports": {"correct": 40.8, "incorrect": 59.2, "unattempted": 0.0, "cga": 40.8, "fscore": 40.8}}},
+            {"id": "qwen3-vl-30b-a3b-instruct", "name": "Qwen3-VL-30B-A3B-Instruct", "brand": "qwen", "type": "open", "scores": {"overall": 18.9, "accuracy": 18.9, "fscore": 19.0, "nature": {"correct": 20.2, "incorrect": 78.5, "unattempted": 1.2, "cga": 20.5, "fscore": 20.4}, "geo": {"correct": 18.9, "incorrect": 80.5, "unattempted": 0.6, "cga": 19.1, "fscore": 19.0}, "culture": {"correct": 17.0, "incorrect": 82.8, "unattempted": 0.2, "cga": 17.0, "fscore": 17.0}, "objects": {"correct": 21.7, "incorrect": 78.3, "unattempted": 0.0, "cga": 21.7, "fscore": 21.7}, "transport": {"correct": 20.9, "incorrect": 79.1, "unattempted": 0.0, "cga": 20.9, "fscore": 20.9}, "entertainment": {"correct": 11.0, "incorrect": 88.6, "unattempted": 0.4, "cga": 11.0, "fscore": 11.0}, "brands": {"correct": 27.3, "incorrect": 72.7, "unattempted": 0.0, "cga": 27.3, "fscore": 27.3}, "sports": {"correct": 23.2, "incorrect": 76.8, "unattempted": 0.0, "cga": 23.2, "fscore": 23.2}}},
+            {"id": "glm-4-6v", "name": "GLM-4-6V", "brand": "glm", "type": "open", "scores": {"overall": 19.0, "accuracy": 19.0, "fscore": 19.0, "nature": {"correct": 24.5, "incorrect": 75.5, "unattempted": 0.0, "cga": 24.5, "fscore": 24.5}, "geo": {"correct": 21.5, "incorrect": 78.5, "unattempted": 0.0, "cga": 21.5, "fscore": 21.5}, "culture": {"correct": 17.8, "incorrect": 82.0, "unattempted": 0.2, "cga": 17.8, "fscore": 17.8}, "objects": {"correct": 19.2, "incorrect": 80.8, "unattempted": 0.0, "cga": 19.2, "fscore": 19.2}, "transport": {"correct": 18.6, "incorrect": 81.4, "unattempted": 0.0, "cga": 18.6, "fscore": 18.6}, "entertainment": {"correct": 12.5, "incorrect": 87.5, "unattempted": 0.0, "cga": 12.5, "fscore": 12.5}, "brands": {"correct": 20.4, "incorrect": 79.6, "unattempted": 0.0, "cga": 20.4, "fscore": 20.4}, "sports": {"correct": 23.2, "incorrect": 76.8, "unattempted": 0.0, "cga": 23.2, "fscore": 23.2}}},
+            {"id": "x-ai_grok-4-fast-reasoning", "name": "Grok-4-fast-reasoning", "brand": "grok", "type": "closed", "scores": {"overall": 18.9, "accuracy": 18.9, "fscore": 18.9, "nature": {"correct": 17.8, "incorrect": 82.2, "unattempted": 0.0, "cga": 17.8, "fscore": 17.8}, "geo": {"correct": 18.9, "incorrect": 80.9, "unattempted": 0.2, "cga": 19.0, "fscore": 19.0}, "culture": {"correct": 18.6, "incorrect": 81.4, "unattempted": 0.0, "cga": 18.6, "fscore": 18.6}, "objects": {"correct": 22.0, "incorrect": 78.0, "unattempted": 0.0, "cga": 22.0, "fscore": 22.0}, "transport": {"correct": 20.3, "incorrect": 79.7, "unattempted": 0.0, "cga": 20.3, "fscore": 20.3}, "entertainment": {"correct": 8.2, "incorrect": 90.6, "unattempted": 1.0, "cga": 8.3, "fscore": 8.3}, "brands": {"correct": 26.5, "incorrect": 73.1, "unattempted": 0.4, "cga": 26.6, "fscore": 26.6}, "sports": {"correct": 34.5, "incorrect": 65.5, "unattempted": 0.0, "cga": 34.5, "fscore": 34.5}}},
+            {"id": "qwen3-vl-32b-instruct", "name": "Qwen3-VL-32B", "brand": "qwen", "type": "open", "scores": {"overall": 17.7, "accuracy": 17.7, "fscore": 17.7, "nature": {"correct": 18.1, "incorrect": 81.9, "unattempted": 0.0, "cga": 18.1, "fscore": 18.1}, "geo": {"correct": 18.0, "incorrect": 81.8, "unattempted": 0.2, "cga": 18.0, "fscore": 18.0}, "culture": {"correct": 16.8, "incorrect": 83.2, "unattempted": 0.0, "cga": 16.8, "fscore": 16.8}, "objects": {"correct": 19.0, "incorrect": 81.0, "unattempted": 0.0, "cga": 19.0, "fscore": 19.0}, "transport": {"correct": 19.0, "incorrect": 81.0, "unattempted": 0.0, "cga": 19.0, "fscore": 19.0}, "entertainment": {"correct": 12.1, "incorrect": 87.9, "unattempted": 0.0, "cga": 12.1, "fscore": 12.1}, "brands": {"correct": 23.8, "incorrect": 76.2, "unattempted": 0.0, "cga": 23.8, "fscore": 23.8}, "sports": {"correct": 20.4, "incorrect": 79.6, "unattempted": 0.0, "cga": 20.4, "fscore": 20.4}}},
+            {"id": "qwen3-vl-30b-a3b-thinking", "name": "Qwen3-VL-30B-A3B-Thinking", "brand": "qwen", "type": "open", "scores": {"overall": 17.6, "accuracy": 17.6, "fscore": 17.6, "nature": {"correct": 18.7, "incorrect": 80.4, "unattempted": 0.9, "cga": 18.9, "fscore": 18.8}, "geo": {"correct": 17.6, "incorrect": 81.2, "unattempted": 1.2, "cga": 17.8, "fscore": 17.7}, "culture": {"correct": 17.6, "incorrect": 82.4, "unattempted": 0.0, "cga": 17.6, "fscore": 17.6}, "objects": {"correct": 19.5, "incorrect": 80.5, "unattempted": 0.0, "cga": 19.5, "fscore": 19.5}, "transport": {"correct": 21.2, "incorrect": 78.8, "unattempted": 0.0, "cga": 21.2, "fscore": 21.2}, "entertainment": {"correct": 11.7, "incorrect": 88.3, "unattempted": 0.0, "cga": 11.7, "fscore": 11.7}, "brands": {"correct": 19.6, "incorrect": 80.4, "unattempted": 0.0, "cga": 19.6, "fscore": 19.6}, "sports": {"correct": 19.0, "incorrect": 81.0, "unattempted": 0.0, "cga": 19.0, "fscore": 19.0}}},
+            {"id": "qwen3-vl-32b-thinking", "name": "Qwen3-VL-32B-Thinking", "brand": "qwen", "type": "open", "scores": {"overall": 16.4, "accuracy": 16.4, "fscore": 16.5, "nature": {"correct": 18.1, "incorrect": 80.7, "unattempted": 1.2, "cga": 18.3, "fscore": 18.2}, "geo": {"correct": 15.8, "incorrect": 82.6, "unattempted": 1.6, "cga": 16.1, "fscore": 15.9}, "culture": {"correct": 17.8, "incorrect": 82.2, "unattempted": 0.0, "cga": 17.8, "fscore": 17.8}, "objects": {"correct": 16.5, "incorrect": 83.3, "unattempted": 0.2, "cga": 16.5, "fscore": 16.5}, "transport": {"correct": 16.7, "incorrect": 83.3, "unattempted": 0.0, "cga": 16.7, "fscore": 16.7}, "entertainment": {"correct": 12.3, "incorrect": 86.3, "unattempted": 1.4, "cga": 12.5, "fscore": 12.4}, "brands": {"correct": 18.1, "incorrect": 81.2, "unattempted": 0.8, "cga": 18.2, "fscore": 18.1}, "sports": {"correct": 21.1, "incorrect": 78.9, "unattempted": 0.0, "cga": 21.1, "fscore": 21.1}}},
+            {"id": "qwen3-vl-8b-instruct", "name": "Qwen3-VL-8B-Instruct", "brand": "qwen", "type": "open", "scores": {"overall": 16.1, "accuracy": 16.1, "fscore": 16.2, "nature": {"correct": 16.9, "incorrect": 81.3, "unattempted": 1.8, "cga": 17.2, "fscore": 17.0}, "geo": {"correct": 16.0, "incorrect": 79.9, "unattempted": 4.1, "cga": 16.7, "fscore": 16.4}, "culture": {"correct": 15.4, "incorrect": 84.2, "unattempted": 0.4, "cga": 15.5, "fscore": 15.4}, "objects": {"correct": 20.4, "incorrect": 79.2, "unattempted": 0.5, "cga": 20.5, "fscore": 20.4}, "transport": {"correct": 17.0, "incorrect": 83.0, "unattempted": 0.0, "cga": 17.0, "fscore": 17.0}, "entertainment": {"correct": 10.4, "incorrect": 89.6, "unattempted": 0.0, "cga": 10.4, "fscore": 10.4}, "brands": {"correct": 17.7, "incorrect": 82.3, "unattempted": 0.0, "cga": 17.7, "fscore": 17.7}, "sports": {"correct": 19.7, "incorrect": 80.3, "unattempted": 0.0, "cga": 19.7, "fscore": 19.7}}},
+            {"id": "qwen3-vl-4b-instruct", "name": "Qwen3-VL-4B-Instruct", "brand": "qwen", "type": "open", "scores": {"overall": 14.9, "accuracy": 14.9, "fscore": 15.0, "nature": {"correct": 14.1, "incorrect": 84.0, "unattempted": 1.8, "cga": 14.4, "fscore": 14.2}, "geo": {"correct": 15.0, "incorrect": 83.8, "unattempted": 1.2, "cga": 15.2, "fscore": 15.1}, "culture": {"correct": 12.3, "incorrect": 87.7, "unattempted": 0.0, "cga": 12.3, "fscore": 12.3}, "objects": {"correct": 19.7, "incorrect": 80.3, "unattempted": 0.0, "cga": 19.7, "fscore": 19.7}, "transport": {"correct": 20.3, "incorrect": 79.7, "unattempted": 0.0, "cga": 20.3, "fscore": 20.3}, "entertainment": {"correct": 7.4, "incorrect": 92.4, "unattempted": 0.2, "cga": 7.5, "fscore": 7.4}, "brands": {"correct": 20.4, "incorrect": 79.6, "unattempted": 0.0, "cga": 20.4, "fscore": 20.4}, "sports": {"correct": 16.9, "incorrect": 83.1, "unattempted": 0.0, "cga": 16.9, "fscore": 16.9}}},
+            {"id": "glm-4-6v-flash", "name": "GLM-4-6V-Flash", "brand": "glm", "type": "open", "scores": {"overall": 14.8, "accuracy": 14.8, "fscore": 14.8, "nature": {"correct": 16.0, "incorrect": 84.0, "unattempted": 0.0, "cga": 16.0, "fscore": 16.0}, "geo": {"correct": 16.2, "incorrect": 83.0, "unattempted": 0.8, "cga": 16.3, "fscore": 16.3}, "culture": {"correct": 13.2, "incorrect": 86.8, "unattempted": 0.0, "cga": 13.2, "fscore": 13.2}, "objects": {"correct": 14.9, "incorrect": 85.1, "unattempted": 0.0, "cga": 14.9, "fscore": 14.9}, "transport": {"correct": 19.0, "incorrect": 81.0, "unattempted": 0.0, "cga": 19.0, "fscore": 19.0}, "entertainment": {"correct": 7.8, "incorrect": 92.2, "unattempted": 0.0, "cga": 7.8, "fscore": 7.8}, "brands": {"correct": 18.8, "incorrect": 81.2, "unattempted": 0.0, "cga": 18.8, "fscore": 18.8}, "sports": {"correct": 20.4, "incorrect": 79.6, "unattempted": 0.0, "cga": 20.4, "fscore": 20.4}}},
+            {"id": "kimi-vl-16b-a3b", "name": "Kimi-VL-16B-A3B", "brand": "kimi", "type": "open", "scores": {"overall": 12.0, "accuracy": 12.0, "fscore": 12.2, "nature": {"correct": 11.0, "incorrect": 85.3, "unattempted": 3.7, "cga": 11.5, "fscore": 11.2}, "geo": {"correct": 13.5, "incorrect": 80.9, "unattempted": 5.7, "cga": 14.3, "fscore": 13.9}, "culture": {"correct": 9.9, "incorrect": 86.8, "unattempted": 3.4, "cga": 10.2, "fscore": 10.1}, "objects": {"correct": 10.8, "incorrect": 88.8, "unattempted": 0.5, "cga": 10.8, "fscore": 10.8}, "transport": {"correct": 13.4, "incorrect": 84.6, "unattempted": 2.0, "cga": 13.7, "fscore": 13.5}, "entertainment": {"correct": 7.6, "incorrect": 86.7, "unattempted": 5.7, "cga": 8.1, "fscore": 7.9}, "brands": {"correct": 20.8, "incorrect": 78.5, "unattempted": 0.8, "cga": 20.9, "fscore": 20.8}, "sports": {"correct": 17.6, "incorrect": 81.7, "unattempted": 0.7, "cga": 17.7, "fscore": 17.7}}},
+            {"id": "qwen3-vl-8b-thinking", "name": "Qwen3-VL-8B-Thinking", "brand": "qwen", "type": "open", "scores": {"overall": 11.9, "accuracy": 11.9, "fscore": 11.9, "nature": {"correct": 12.0, "incorrect": 87.4, "unattempted": 0.6, "cga": 12.0, "fscore": 12.0}, "geo": {"correct": 12.7, "incorrect": 85.9, "unattempted": 1.4, "cga": 12.9, "fscore": 12.8}, "culture": {"correct": 9.7, "incorrect": 90.1, "unattempted": 0.2, "cga": 9.7, "fscore": 9.7}, "objects": {"correct": 14.6, "incorrect": 85.4, "unattempted": 0.0, "cga": 14.6, "fscore": 14.6}, "transport": {"correct": 10.8, "incorrect": 89.2, "unattempted": 0.0, "cga": 10.8, "fscore": 10.8}, "entertainment": {"correct": 8.4, "incorrect": 90.8, "unattempted": 0.8, "cga": 8.5, "fscore": 8.4}, "brands": {"correct": 15.8, "incorrect": 83.8, "unattempted": 0.4, "cga": 15.8, "fscore": 15.8}, "sports": {"correct": 15.5, "incorrect": 83.8, "unattempted": 0.7, "cga": 15.6, "fscore": 15.5}}},
+            {"id": "qwen3-vl-4b-thinking", "name": "Qwen3-VL-4B-Thinking", "brand": "qwen", "type": "open", "scores": {"overall": 10.9, "accuracy": 10.9, "fscore": 10.9, "nature": {"correct": 8.9, "incorrect": 90.5, "unattempted": 0.6, "cga": 9.0, "fscore": 8.9}, "geo": {"correct": 11.3, "incorrect": 87.3, "unattempted": 1.4, "cga": 11.5, "fscore": 11.4}, "culture": {"correct": 11.9, "incorrect": 87.4, "unattempted": 0.8, "cga": 12.0, "fscore": 11.9}, "objects": {"correct": 14.2, "incorrect": 85.6, "unattempted": 0.2, "cga": 14.2, "fscore": 14.2}, "transport": {"correct": 11.4, "incorrect": 87.9, "unattempted": 0.7, "cga": 11.5, "fscore": 11.5}, "entertainment": {"correct": 5.3, "incorrect": 93.3, "unattempted": 1.4, "cga": 5.4, "fscore": 5.3}, "brands": {"correct": 13.1, "incorrect": 84.2, "unattempted": 2.7, "cga": 13.4, "fscore": 13.3}, "sports": {"correct": 14.8, "incorrect": 85.2, "unattempted": 0.0, "cga": 14.8, "fscore": 14.8}}},
+            {"id": "qwen3-vl-2b-instruct", "name": "Qwen3-VL-2B-Instruct", "brand": "qwen", "type": "open", "scores": {"overall": 9.8, "accuracy": 9.8, "fscore": 9.9, "nature": {"correct": 9.5, "incorrect": 88.3, "unattempted": 2.1, "cga": 9.7, "fscore": 9.6}, "geo": {"correct": 9.4, "incorrect": 90.0, "unattempted": 0.6, "cga": 9.4, "fscore": 9.4}, "culture": {"correct": 8.9, "incorrect": 90.3, "unattempted": 0.8, "cga": 9.0, "fscore": 8.9}, "objects": {"correct": 14.2, "incorrect": 85.8, "unattempted": 0.0, "cga": 14.2, "fscore": 14.2}, "transport": {"correct": 9.8, "incorrect": 89.9, "unattempted": 0.3, "cga": 9.8, "fscore": 9.8}, "entertainment": {"correct": 4.9, "incorrect": 92.6, "unattempted": 2.5, "cga": 5.0, "fscore": 5.0}, "brands": {"correct": 13.1, "incorrect": 84.6, "unattempted": 2.3, "cga": 13.4, "fscore": 13.2}, "sports": {"correct": 13.4, "incorrect": 86.6, "unattempted": 0.0, "cga": 13.4, "fscore": 13.4}}},
+            {"id": "qwen3-vl-2b-thinking", "name": "Qwen3-VL-2B-Thinking", "brand": "qwen", "type": "open", "scores": {"overall": 7.1, "accuracy": 7.1, "fscore": 7.2, "nature": {"correct": 5.8, "incorrect": 90.2, "unattempted": 4.0, "cga": 6.1, "fscore": 5.9}, "geo": {"correct": 7.0, "incorrect": 90.6, "unattempted": 2.3, "cga": 7.2, "fscore": 7.1}, "culture": {"correct": 6.1, "incorrect": 92.3, "unattempted": 1.6, "cga": 6.2, "fscore": 6.2}, "objects": {"correct": 9.2, "incorrect": 89.5, "unattempted": 1.4, "cga": 9.3, "fscore": 9.2}, "transport": {"correct": 5.9, "incorrect": 93.5, "unattempted": 0.7, "cga": 5.9, "fscore": 5.9}, "entertainment": {"correct": 4.1, "incorrect": 94.1, "unattempted": 1.8, "cga": 4.2, "fscore": 4.1}, "brands": {"correct": 13.5, "incorrect": 85.4, "unattempted": 1.2, "cga": 13.6, "fscore": 13.5}, "sports": {"correct": 9.9, "incorrect": 90.1, "unattempted": 0.0, "cga": 9.9, "fscore": 9.9}}},
+        ];
+
+        // 各图表显示的模型ID定义 (保持模型列表不变)
+        const LEADERBOARD_IDS = [
+"gemini-3-pro",
+"Kimi-K2.5",
+"claude-opus-4.5",
+"gemini-2.5-pro",
+"seed-1.5-thinking-vision-pro",
+"gpt-5.2",
+"gpt-5.1",
+"qwen3-vl-235b-a22b-instruct",
+"gpt-4o",
+"grok-4-1-fast-reasoning",
+"claude-sonnet-4.5",
+"glm-4-6v",
+"qwen3-vl-30b-a3b-instruct",
+"x-ai_grok-4-fast-reasoning",
+"qwen3-vl-32b-instruct",
+"qwen3-vl-8b-instruct",
+"qwen3-vl-4b-instruct",
+"glm-4-6v-flash",
+"kimi-vl-16b-a3b",
+"qwen3-vl-2b-instruct",
+    ];
+        const RADAR_IDS = ["gemini-3-pro", 'Kimi-K2.5', "claude-opus-4.5", "gpt-5.1", "qwen3-vl-235b-a22b-instruct", "seed-1.5-VL-thinking", "grok-4-1-fast-reasoning"];
+        const BAR_CHART_IDS = ["gemini-3-pro", "Kimi-K2.5", "gemini-2.5-pro", "claude-opus-4.5", "seed-1.5-thinking-vision-pro", "gpt-5.2", "gpt-5.1", "qwen3-vl-235b-a22b-instruct",
+        "grok-4-1-fast-reasoning", "claude-sonnet-4.5", "glm-4-6v", "x-ai_grok-4-fast-reasoning", "qwen3-vl-32b-instruct"];
+
+        // 样式配置
+        const BRAND_CONFIG = {
+            "gpt": { color: "#1F1F1F", logo: "openai_small.svg", pointStyle: 'circle' },
+            "claude": { color: "#C0765D", logo: "anthropic_small.svg", pointStyle: 'rectRot' },
+            "gemini": { color: "#34A853", logo: "google_small.svg", pointStyle: 'rect' },
+            "glm": { color: "#3B82F6", logo: "zai_small.svg" },
+            "qwen": { color: "#0D9488", logo: "qwen_small.svg", pointStyle: 'star' },
+            "kimi": { color: "#2563EB", logo: "kimi_small.png", pointStyle: 'triangle' },
+            "seed": { color: "#EA580C", logo: "bytedance_small.svg", pointStyle: 'triangle' },
+            "grok": {color: "#999999", logo: "xai_small.svg", pointStyle: 'crossRot'},
+        };
+
+        const RADAR_STYLE = {
+            "gemini-3-pro": { color: "#34A853", pointStyle: 'rect' },
+            "claude-opus-4.5": { color: "#C0765D", pointStyle: 'rectRot' },
+            "gpt-5.1": { color: "#1F1F1F", pointStyle: 'circle' },
+            "qwen3-vl-235b-a22b-instruct": { color: "#0D9488", pointStyle: 'star' },
+            "kimi-x35": { color: "#2563EB", pointStyle: 'triangle' },
+        };
+        // ==========================================
+        // 2. 业务逻辑实现
+        // ==========================================
+
+        // --- Leaderboard Table ---
+        function initLeaderboard() {
+            const tbody = document.getElementById('leaderboardBody');
+            const data = LEADERBOARD_IDS.map(id => WORLD_VQA_MASTER_DATA.find(m => m.id === id));
+            
+            data.forEach((row, index) => {
+                const rank = index + 1;
+                const tr = document.createElement('tr');
+                tr.className = 'border-b border-black/5 hover:bg-accent-purple/5 transition-colors';
+                const rankColor = rank === 1 ? 'text-amber-500' : rank === 2 ? 'text-slate-400' : rank === 3 ? 'text-amber-600' : 'text-text-muted';
+                
+                tr.innerHTML = `
+                    <td class="px-6 py-4"><span class="inline-flex items-center justify-center w-8 h-8 rounded-full ${rank <= 3 ? 'bg-gray-100' : ''} ${rankColor} font-mono font-bold">${rank}</span></td>
+                    <td class="px-6 py-4"><span class="font-medium text-text-primary">${row.name}</span></td>
+                    <td class="px-6 py-4 text-center"><span class="font-mono text-accent-purple font-bold">${row.scores.accuracy.toFixed(1)}</span></td>
+                    <td class="px-6 py-4 text-center"><span class="font-mono text-accent-purple font-bold">${row.scores.fscore.toFixed(1)}</span></td>
+                    
+                    <td class="px-6 py-4 text-center text-text-secondary">${row.scores.nature.fscore.toFixed(1)}</td>
+                    <td class="px-6 py-4 text-center text-text-secondary">${row.scores.geo.fscore.toFixed(1)}</td>
+                    <td class="px-6 py-4 text-center text-text-secondary">${row.scores.culture.fscore.toFixed(1)}</td>
+                    <td class="px-6 py-4 text-center text-text-secondary">${row.scores.objects.fscore.toFixed(1)}</td>
+                    <td class="px-6 py-4 text-center text-text-secondary">${row.scores.transport.fscore.toFixed(1)}</td>
+                    <td class="px-6 py-4 text-center text-text-secondary">${row.scores.entertainment.fscore.toFixed(1)}</td>
+                    <td class="px-6 py-4 text-center text-text-secondary">${row.scores.brands.fscore.toFixed(1)}</td>
+                    <td class="px-6 py-4 text-center text-text-secondary">${row.scores.sports.fscore.toFixed(1)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function initBarChart() {
+            const dom = document.getElementById('barChartContainer');
+            if (!dom) return;
+            const myChart = echarts.init(dom, null, { renderer: 'svg' });
+            
+            const models = BAR_CHART_IDS.map(id => WORLD_VQA_MASTER_DATA.find(m => m.id === id)).filter(m => m);
+
+            const richStyles = {};
+            Object.entries(BRAND_CONFIG).forEach(([k, v]) => {
+                richStyles[k] = { backgroundColor: { image: 'logos/' + v.logo }, height: 14, width: 14 };
+            });
+
+            myChart.setOption({
+                grid: { top: '2%', bottom: '0%', left: '0%', right: '0%', containLabel: true },
+                xAxis: [
+                    {
+                        type: 'category',
+                        position: 'bottom',
+                        data: models.map(m => m.name),
+                        axisLabel: { interval: 0, formatter: (val, idx) => `{${models[idx].brand}|}`, rich: richStyles }
+                    },
+                    {
+                        type: 'category',
+                        position: 'bottom',
+                        data: models.map(m => m.name),
+                        axisLabel: { interval: 0, rotate: 45, color: '#64748b', fontSize: 9, align: 'right', margin: 25 },
+                        axisLine: { show: false }, axisTick: { show: false }
+                    }
+                ],
+                yAxis: { type: 'value', max: 60 },
+                series: [{
+                    type: 'bar',
+                    data: models.map(m => ({
+                        value: m.scores.overall,
+                        itemStyle: { color: (BRAND_CONFIG[m.brand] || {color: '#ccc'}).color, borderRadius: [3, 3, 0, 0] }
+                    })),
+                    barWidth: '60%',
+                    // --- 核心修改位置 ---
+                    label: { 
+                        show: true, 
+                        position: 'inside', // 将位置改为内部顶端
+                        distance: 10,          // 距离柱子顶部的距离
+                        color: '#fff',         // 在深色柱子内建议使用白色文字以保证清晰度
+                        fontSize: 10, 
+                        fontWeight: 'bold',
+                        formatter: '{c}'       // 显示数值
+                    }
+                    // ------------------
+                }]
+            });
+            window.addEventListener('resize', () => myChart.resize());
+        }
+
+        // --- Radar Chart 修复版 ---
+        function initRadarChart() {
+            const dom = document.getElementById('categoryChart');
+            if (!dom) return;
+
+            const myChart = echarts.init(dom, null, { renderer: 'svg' });
+            const models = RADAR_IDS.map(id => WORLD_VQA_MASTER_DATA.find(m => m.id === id)).filter(m => m);
+
+            // 符号映射表：将你的 pointStyle 映射为 ECharts 的 icon/symbol 格式
+            const symbolMap = {
+                'circle': 'circle',
+                'rect': 'rect',
+                'rectRot': 'diamond', 
+                'triangle': 'triangle',
+                'star': 'path://M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z'
+            };
+
+            const option = {
+                animation: false,
+                legend: [
+                    {
+                        // 第一行图例
+                        top: '0%',
+                        left: 'center',
+                        itemWidth: 12,
+                        textStyle: { fontSize: 10 },
+                        // 只取前 4 个模型：Gemini, Seed, Claude, GPT
+                        data: models.slice(0, 4).map(m => {
+                            const config = RADAR_STYLE[m.id] || BRAND_CONFIG[m.brand] || {};
+                            return {
+                                name: m.name,
+                                icon: symbolMap[config.pointStyle] || 'circle'
+                            };
+                        })
+                    },
+                    {
+                        // 第二行图例
+                        top: '5%', // 调整此数值以控制行间距，确保不重叠
+                        left: 'center',
+                        itemWidth: 12,
+                        textStyle: { fontSize: 10 },
+                        // 取剩下的模型：Qwen, Kimi
+                        data: models.slice(4).map(m => {
+                            const config = RADAR_STYLE[m.id] || BRAND_CONFIG[m.brand] || {};
+                            return {
+                                name: m.name,
+                                icon: symbolMap[config.pointStyle] || 'circle'
+                            };
+                        })
+                    }
+                ],
+                radar: {
+                    indicator: [
+                        // 关键点 1：仅在第一个 indicator 中单独设置 axisLabel.show: true
+                        { name: 'Overall', max: 70, axisLabel: { show: true } }, 
+                        { name: 'Nature', max: 70 }, 
+                        { name: 'Geography', max: 70 },
+                        { name: 'Culture', max: 70 }, 
+                        { name: 'Objects', max: 70 }, 
+                        { name: 'Transportation', max: 70 },
+                        { name: 'Entertainment', max: 70 }, 
+                        { name: 'Brands', max: 70 }, 
+                        { name: 'Sports', max: 70 }
+                    ],
+                    center: ['50%', '55%'],
+                    radius: '65%',
+                    splitNumber: 7, 
+                    axisName: { color: '#666', fontSize: 10 },
+                    
+                    // 关键点 2：将全局的 axisLabel 设置为 show: false
+                    axisLabel: { 
+                        show: false, 
+                        fontSize: 8, 
+                        color: '#999',
+                        showMaxLabel: true, // 建议关闭最大值 70，避免和 "Overall" 文字重叠
+                        showMinLabel: false
+                    },
+
+                    // 关键点 3：关闭刻度线 (axisTick)，使画面更简洁
+                    axisTick: {
+                        show: false
+                    },
+                    
+                    splitArea: { show: false }
+                },
+                series: [{
+                    type: 'radar',
+                    data: models.map(m => {
+                        const config = RADAR_STYLE[m.id] || BRAND_CONFIG[m.brand] || {};
+                        return {
+                            name: m.name,
+                            value: [
+                                m.scores.accuracy, m.scores.nature.correct, m.scores.geo.correct,
+                                m.scores.culture.correct, m.scores.objects.correct, m.scores.transport.correct,
+                                m.scores.entertainment.correct, m.scores.brands.correct, m.scores.sports.correct
+                            ],
+                            // --- 设置数据点形状 ---
+                            symbol: symbolMap[config.pointStyle] || 'circle',
+                            symbolSize: 8,
+                            itemStyle: { color: config.color || '#999' },
+                            lineStyle: { width: 2 },
+                            areaStyle: { opacity: 0.1 }
+                        };
+                    })
+                }]
+            };
+
+            myChart.setOption(option);
+        }
+
+        // --- Carousel Logic (保持原样) ---
+        const carouselData = [
+        { image: "./images/Nature_142.jpg", category: "Nature & Environment", question: "What bird is in the picture?", answer: "Chestnut Shortwing" },
+        { image: "./images/Nature_291.jpg", category: "Nature & Environment", question: "What's the name of the flower in the picture?", answer: "Freesia" },
+        { image: "./images/Geography_308.jpg", category: "Locations & Architecture", question: "图中出现的内容/文物是/属于哪个遗址？", answer: "善化寺" },
+        { image: "./images/Geography_1740.jpg", category: "Locations & Architecture", question: "What is the name of the natural landmark shown in the image?", answer: "Cape of Good Hope" },
+        { image: "./images/Culture_7.jpg", category: "Culture, Arts & Crafts", question: "What is the title of the dance performance shown in the picture?", answer: "Swan Lake" },
+        { image: "./images/Culture_839.jpg", category: "Culture, Arts & Crafts", question: "这个图片是什么珍品", answer: "战国水晶杯" },
+        { image: "./images/Object_10.jpg", category: "Objects & Products", question: "What style of bag is shown in the picture?", answer: "Shell bag" },
+        { image: "./images/Object_1408.jpg", category: "Objects & Products", question: "What electronic consumer product is shown in the image? Provide the exact name and model number.", answer: "iPhone 17 Pro" },
+        { image: "./images/Transportation_309.jpg", category: "Vehicles, Craft & Transportation", question: "图中的飞行器是什么型号？", answer: "中国歼 - 20战斗机" },
+        { image: "./images/Transportation_234.jpg", category: "Vehicles, Craft & Transportation", question: "What specific attachment or accessory is this for the vehicle?", answer: "Roll cage" },
+        { image: "./images/Entertainment_1306.jpg", category: "Entertainment, Media & Gaming", question: "What is the name of the character in the picture?", answer: "Bayle the Dread" },
+        { image: "./images/Entertainment_1050.jpg", category: "Entertainment, Media & Gaming", question: "Which film or TV series is this image from?", answer: "Your Name" },
+        { image: "./images/Brand_216.jpg", category: "Brands, Logos & Graphic Design", question: "What is the medium (carrier) of the advertisement in this image?", answer: "Direct-mail advertisement" },
+        { image: "./images/Brand_792.jpg", category: "Brands, Logos & Graphic Design", question: "What is the name of the trademark or logo shown in the image?", answer: "EgyptAir" },
+        { image: "./images/Sport_477.jpg", category: "Sports, Gear & Venues", question: "What track-and-field or gymnastics event is shown in the picture? Please be as specific as possible.", answer: "Floor exercise" },
+        { image: "./images/Sport_4.jpg", category: "Sports, Gear & Venues", question: "图片中的建筑是哪座体育场馆？", answer: "上海体育场" },
+        ];
+
+        let currentIndex = 0;
+        let carouselInterval;
+        let carouselElement = null;
+
+        function createCarouselItems() {
+            const carousel = document.getElementById('carousel');
+            carousel.innerHTML = '';
+            
+            carouselData.forEach((data, index) => {
+                const item = document.createElement('div');
+                item.className = 'carousel-item';
+                item.innerHTML = `
+                    <div class="carousel-item-img-container">
+                        <img src="${data.image}" alt="VQA Case" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22280%22 height=%22380%22%3E%3Crect fill=%22%23e2e8f0%22 width=%22280%22 height=%22380%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%2394a3b8%22 text-anchor=%22middle%22%3EImage Placeholder%3C/text%3E%3C/svg%3E';">
+                    </div>
+                    <div class="carousel-item-content">
+                        <div>
+                            <p class="category">${data.category}</p>
+                            <p class="question">${data.question}</p>
+                        </div>
+                        <div class="answer-box">
+                            <p class="answer">
+                                <span class="text-text-muted font-normal mr-1">Answer:</span>${data.answer}
+                            </p>
+                        </div>
+                    </div>
+                `;
+                carousel.appendChild(item);
+            });
+            updateCarouselPositions();
+        }
+
+        function updateCarouselPositions() {
+            if (!carouselElement) carouselElement = document.getElementById('carousel');
+            const items = carouselElement.children;
+            const total = items.length;
+            
+            // Wider spread configuration
+            const centerX = 0;
+            const firstTierX = 320;  // Was 180
+            const secondTierX = 620; // Was 340
+            const centerZ = 200;
+            const firstTierZ = -100;
+            const secondTierZ = -350;
+            const rotation = 22;     // Rotation angle
+
+            for (let i = 0; i < total; i++) {
+                // Calculate circular offset
+                let offset = (i - currentIndex);
+                
+                // Normalize offset to be centered around 0
+                if (offset > total / 2) offset -= total;
+                if (offset < -total / 2) offset += total;
+
+                const item = items[i];
+                
+                if (offset === 0) {
+                    // Center
+                    item.style.transform = `translateZ(${centerZ}px) scale(1)`;
+                    item.style.opacity = '1';
+                    item.style.zIndex = '10';
+                } else if (Math.abs(offset) === 1) {
+                    // Adjacent
+                    const sign = Math.sign(offset);
+                    item.style.transform = `translateX(${sign * firstTierX}px) translateZ(${firstTierZ}px) rotateY(${-sign * rotation}deg) scale(0.85)`;
+                    item.style.opacity = '0.6';
+                    item.style.zIndex = '8';
+                } else if (Math.abs(offset) === 2) {
+                    // Edges
+                    const sign = Math.sign(offset);
+                    item.style.transform = `translateX(${sign * secondTierX}px) translateZ(${secondTierZ}px) rotateY(${-sign * (rotation * 1.5)}deg) scale(0.7)`;
+                    item.style.opacity = '0.3';
+                    item.style.zIndex = '5';
+                } else {
+                    // Hidden back
+                    item.style.transform = `translateZ(-500px) scale(0.5)`;
+                    item.style.opacity = '0';
+                    item.style.zIndex = '1';
+                }
+            }
+
+            // Update dots
+            document.querySelectorAll('.carousel-dot').forEach((dot, index) => {
+                if (index === currentIndex) {
+                    dot.classList.remove('bg-black/20');
+                    dot.classList.add('bg-accent-cyan', 'w-6'); // Active dot wider
+                } else {
+                    dot.classList.remove('bg-accent-cyan', 'w-6');
+                    dot.classList.add('bg-black/20');
+                }
+            });
+        }
+
+        function setCarousel(index) {
+            currentIndex = index;
+            updateCarouselPositions();
+            clearInterval(carouselInterval);
+            carouselInterval = setInterval(() => {
+                nextSlide();
+            }, 4000);
+        }
+
+        function nextSlide() {
+            currentIndex = (currentIndex + 1) % carouselData.length;
+            updateCarouselPositions();
+        }
+
+        function prevSlide() {
+            currentIndex = (currentIndex - 1 + carouselData.length) % carouselData.length;
+            updateCarouselPositions();
+            clearInterval(carouselInterval);
+            carouselInterval = setInterval(nextSlide, 4000);
+        }
+
+        // Initialize carousel
+        createCarouselItems();
+        carouselInterval = setInterval(nextSlide, 4000);
+
+        // --- Init All ---
+        window.onload = () => {
+            lucide.createIcons();
+            initLeaderboard();
+            initRadarChart();
+            initBarChart();
+            renderCarousel();
+            setInterval(nextSlide, 4000);
+        };
+    </script>
+</body>
+</html>
